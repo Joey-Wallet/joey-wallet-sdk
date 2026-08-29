@@ -86,6 +86,10 @@ Run the extension's contract suite before opening a PR that changes anything in
 
 ## Releasing
 
+Full instructions, including the one-time npm and GitHub setup, are in
+[docs/PUBLISHING.md](docs/PUBLISHING.md). Contributor guide:
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 Releases are driven by [changesets](https://github.com/changesets/changesets).
 Add one in the same PR as your change:
 
