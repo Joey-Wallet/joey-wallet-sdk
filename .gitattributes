@@ -1,0 +1,6 @@
+# Normalise to LF in the repository. Contributors on Windows keep CRLF in their
+# working tree; everyone else sees no churn.
+* text=auto eol=lf
+
+# Lockfiles and generated output are never hand-merged.
+pnpm-lock.yaml linguist-generated=true -diff
