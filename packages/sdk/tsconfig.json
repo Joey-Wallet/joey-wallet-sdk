@@ -1,0 +1,36 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": [],
+
+    /**
+     * Node's own resolution, not the bundler's.
+     *
+     * The base config sets `moduleResolution: "Bundler"`, which lets a source
+     * file write `from './detect'` and emits that specifier verbatim. Vite and
+     * webpack fill in the extension; Node ESM does not, so `import
+     * '@joeywallet/wallet-sdk'` was `ERR_MODULE_NOT_FOUND` on the first
+     * relative re-export in `index.js` — which is half the target market, since
+     * Next.js resolves server components through Node.
+     *
+     * Two ways to fix it: bundle the output, or emit specifiers Node can
+     * resolve. Bundling means adding a bundler to a package that builds with
+     * bare `tsc`, and it would erase the per-entry-point `dist/*.js` files the
+     * `exports` map names. So the specifiers carry `.js`, and this setting is
+     * what makes a missing one a compile error instead of a runtime one three
+     * releases later — `Bundler` would happily accept the extensionless form
+     * again. `test/nodeResolution.test.ts` is the belt to this braces: it
+     * imports the built package in a real `node` process.
+     *
+     * `module` must move with `moduleResolution`; `package.json` already says
+     * `"type": "module"`, so NodeNext emits ESM exactly as before.
+     */
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
+  },
+  "include": ["src/**/*"]
+}

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+
+    /**
+     * Node's own resolution. Same reasoning, and the same stakes, as
+     * `packages/sdk/tsconfig.json` — this is the second package published to
+     * npm, and a migrating GemWallet dapp on Next.js hits it first.
+     */
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
+  },
+  "include": ["src/**/*"]
+}

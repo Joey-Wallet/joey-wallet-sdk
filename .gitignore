@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Test and coverage output
+coverage/
+.vitest/
+
+# Scratch — anything a working session leaves behind. Nothing matched by these
+# patterns is ever part of a change; if you need to keep one, rename it.
+scratch/
+tmp/
+*.scratch
+*.scratch.*
+*.local
+*.log
+.env
+.env.*
+!.env.example
+
+# Editor and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

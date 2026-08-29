@@ -1,0 +1,46 @@
+{
+  "name": "joey-wallet-sdk",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.4.0",
+  "pnpm": {
+    "//": "Empty allowlist: NO dependency may run an install script. An install hook is the delivery mechanism behind the Shai-Hulud npm compromise, and this repo publishes to npm — a compromised build host signs real releases. Adding a package here is a reviewable security decision.",
+    "onlyBuiltDependencies": []
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/**\" build",
+    "//test": "Builds first, deliberately: gemwallet-compat's tests import @joeywallet/wallet-sdk, whose exports map points at dist/, so a bare `vitest run` grades whatever was last built. Use test:only when you know dist/ is fresh.",
+    "test": "pnpm build && vitest run",
+    "test:only": "vitest run",
+    "test:watch": "pnpm build && vitest",
+    "test:coverage": "pnpm build && vitest run --coverage",
+    "ts:check": "pnpm -r ts:check",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "//verify": "What CI runs, and what a release must pass.",
+    "verify": "pnpm ts:check && pnpm lint && pnpm test",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "2.27.11",
+    "@eslint/js": "9.17.0",
+    "@types/node": "22.10.2",
+    "@typescript-eslint/eslint-plugin": "8.19.0",
+    "@typescript-eslint/parser": "8.19.0",
+    "@vitest/coverage-v8": "2.1.8",
+    "eslint": "9.17.0",
+    "jsdom": "25.0.1",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joeywallet/joey-wallet-sdk.git"
+  }
+}

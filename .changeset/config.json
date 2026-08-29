@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "//linked": "The two packages version together. gemwallet-compat is a thin adapter over the SDK and depends on its exact runtime behaviour, so a consumer who upgrades one and not the other is in a combination nobody tested.",
+  "linked": [["@joeywallet/wallet-sdk", "@joeywallet/gemwallet-compat"]],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}
