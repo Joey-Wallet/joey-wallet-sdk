@@ -364,7 +364,15 @@ export interface BulkEntryResult extends SignTransactionResult {
  * for both and expect it to parse.
  */
 export interface SignTransactionBulkFailure {
-  /** Zero-based index of the first entry that did not succeed. */
+  /**
+   * Zero-based index of the first entry that did not succeed.
+   *
+   * The error's `message` names the same number the same way — "transaction at
+   * index 2 of 5 did not succeed: tecUNFUNDED_PAYMENT" — so the sentence and
+   * the field cannot be read as disagreeing. It said "transaction 2 of 5" for
+   * that case until this was written, which is the third transaction and the
+   * one wording that can be read two ways.
+   */
   failedIndex: number
   /** Every transaction in the batch, in the order you sent them. */
   results: BulkEntryResult[]

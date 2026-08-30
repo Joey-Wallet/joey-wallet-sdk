@@ -252,6 +252,40 @@ counting up from the account's next number, and 15 more ledgers of validity per
 position so the transaction submitted last is not the one with the least time
 left. A `Sequence` you set yourself is kept as it is and is not renumbered.
 
+Every entry also gets **5 extra ledgers per entry beyond the first**, shared
+across the batch. That one is not about position: with `submit: true` the whole
+batch is signed before any of it is broadcast, so the clock starts at that
+single reading and entry 0 is the one with the least time and the longest wait.
+On a Ledger that wait is one physical confirmation per transaction. So entry `i`
+of an `n`-entry batch is signed with
+
+```
+LastLedgerSequence = ledger_current + 20 + 5 * (n - 1) + 15 * i
+```
+
+### How long the wallet watches, and what `unknown` means at the tail
+
+The wallet follows each submission until its `LastLedgerSequence` passes — the
+ledger index is the only thing entitled to say a transaction failed — but it
+stops watching after **10 minutes** on any one entry, because this runs in an
+MV3 service worker with an approval window open.
+
+Those two numbers meet in long batches. Ten minutes is about 150 ledgers at a
+four-second close, while a full 32-entry batch gives entry 0 a window of
+`20 + 5·31 = 175` ledgers and entry 31 one of `640` — roughly 43 minutes. So in
+a batch that size, the wallet's watch is what ends first, for every entry.
+
+When it does, that entry comes back `status: 'unknown'`, and so does every entry
+behind it that was never broadcast. **This is not a failure and must not be
+retried as one.** The transaction was submitted, the wallet stopped watching,
+and it may still be validated — resolve it by `hash` and only then decide. The
+entries behind an `unknown` are `unknown` for the same reason: nothing about
+their sequence numbers can be settled until that one is.
+
+The widths are deliberate in this direction. A shorter window would expire as
+`tefMAX_LEDGER`, which is definite and irrecoverable and would strand the whole
+tail with it; stopping the watch gives up information, not money.
+
 ### When a batch fails part way
 
 It rejects, and the error's `data` is a `SignTransactionBulkFailure`:
@@ -306,6 +340,22 @@ of bare `tx_json` carrying no `status`, and its `message` is the bare engine
 token (`tecPATH_PARTIAL`) rather than a sentence. Here `data` is an object
 holding `{failedIndex, results}`. A dapp integrating both wallets branches on the
 container and on the array's name; `failedIndex` is what transfers unchanged.
+
+The error's `message` counts the same way the field does:
+
+```
+transaction at index 2 of 5 did not succeed: tecUNFUNDED_PAYMENT
+```
+
+Index `2` is the *third* transaction, and the sentence says "at index" so it
+cannot be read as anything else. Do not parse it — `failedIndex` and
+`results[i].status` carry the same facts as data — but when you print it beside
+the field, the two numbers agree.
+
+The wallet's own approval window says the same thing to the user counting from
+one ("Transaction 3 of 5"), because there is no zero-based field beside it on
+that screen. Both are unambiguous; only the pair "transaction 2 of 5" next to
+`failedIndex: 2` was not.
 
 > **`signTransactionBulk` is not XLS-56 `Batch`.** They are different things and
 > Joey keeps them apart deliberately. A `Batch` is a *single* transaction
