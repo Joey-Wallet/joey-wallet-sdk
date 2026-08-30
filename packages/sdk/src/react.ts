@@ -352,9 +352,12 @@ export function useSignTransactionFor<TTx extends TransactionLike = AnyTransacti
 }
 
 export function useSignTransactionBulk<TTx extends TransactionLike = AnyTransaction>(
-  options?: UseJoeyMutationOptions<SignTransactionResult[], SignTransactionBulkParams<TTx>>,
-): UseJoeyMutationResult<SignTransactionResult[], SignTransactionBulkParams<TTx>> {
-  return useJoeyMutation<SignTransactionResult[], SignTransactionBulkParams<TTx>>(
+  options?: UseJoeyMutationOptions<
+    SignAndSubmitTransactionResult[],
+    SignTransactionBulkParams<TTx>
+  >,
+): UseJoeyMutationResult<SignAndSubmitTransactionResult[], SignTransactionBulkParams<TTx>> {
+  return useJoeyMutation<SignAndSubmitTransactionResult[], SignTransactionBulkParams<TTx>>(
     (joey, params) => joey.signTransactionBulk(params),
     options,
   )

@@ -77,10 +77,20 @@ export interface Joey {
     params: SignTransactionForParams<TTx>,
   ): Promise<SignTransactionResult>
 
-  /** One approval, up to 32 transactions, signed in order. */
+  /**
+   * One approval, up to `MAX_BULK_TRANSACTIONS` transactions, signed in order.
+   *
+   * Resolves with one entry per transaction, in the order you sent them.
+   * `engine_result` is present only when you asked for `submit: true` — with
+   * `submit: false` nothing is broadcast, so there is no engine result to give.
+   *
+   * A batch that fails part way *rejects*, and the error's `data` is a
+   * {@link SignTransactionBulkFailure} carrying every signed blob and which
+   * index stopped it. Read that rather than re-prompting the user.
+   */
   signTransactionBulk<TTx extends TransactionLike = AnyTransaction>(
     params: SignTransactionBulkParams<TTx>,
-  ): Promise<SignTransactionResult[]>
+  ): Promise<SignAndSubmitTransactionResult[]>
 
   signIn(params?: SignInParams): Promise<SignInResult>
 
@@ -270,7 +280,10 @@ export function createJoeyClient(provider: JoeyInjectedProvider): Joey {
     },
 
     signTransactionBulk(params) {
-      return call<SignTransactionResult[]>(JOEY_RPC_METHODS.signTransactionBulk, params)
+      return call<SignAndSubmitTransactionResult[]>(
+        JOEY_RPC_METHODS.signTransactionBulk,
+        params,
+      )
     },
 
     signIn(params) {

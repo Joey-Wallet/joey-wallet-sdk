@@ -207,6 +207,22 @@ const { tx_blob, hash } = await joey.signTransactionFor({
 })
 ```
 
+**`signTransactionFor` does not autofill, and `autofill: true` does not make it.**
+The flag exists on the type because the signing methods share a parameter shape;
+on this one it is ignored. Your `tx_json` must already carry `Fee`, `Sequence`
+and `LastLedgerSequence`, or you get a real signature over a transaction
+`rippled` will refuse — with no error until you submit it.
+
+The reason is that a multisign signature is one of several over *identical
+bytes*, and all three fields are inside those bytes. Two signers approving a few
+seconds apart would read two different `LastLedgerSequence` values, and the
+assembled transaction would validate at most one of their signatures. The `Fee`
+is worse: the rule is `base_fee × (1 + signatures)`, a wallet contributes one
+signature and cannot know how many others the signer list requires, and raising
+the `Fee` afterwards discards every signature already collected. The coordinator
+assembling the transaction is the only party that can choose these — that is
+you.
+
 ```ts
 import { MAX_BULK_TRANSACTIONS } from '@joeywallet/wallet-sdk'
 
@@ -221,11 +237,75 @@ for (const entry of results) console.log(entry.hash)
 
 `submit` has no default and the type requires it, because signing and submitting
 are not interchangeable and a dapp that guesses wrong either double-spends or
-never spends. `true` broadcasts each transaction; `false` hands the signed blobs
-back for you to submit.
+never spends. `true` signs every transaction and then broadcasts them strictly
+in order; `false` signs them and broadcasts **nothing**, handing the blobs back
+for you to submit.
 
-The batch stops at the first failure, so a short result array means the
-remaining transactions were never signed.
+One approval covers the whole batch and one password unlocks it — the user pages
+through every transaction and then decides once. They cannot approve some and
+refuse others, on this wallet or on Joey mobile: it is one queue entry, one
+approve, one reject. On a Ledger it is still one password, but N confirmations
+on the device, one per transaction, which is what a hardware wallet is for.
+
+The wallet numbers the batch **up front**: one reading of the ledger, `Sequence`
+counting up from the account's next number, and 15 more ledgers of validity per
+position so the transaction submitted last is not the one with the least time
+left. A `Sequence` you set yourself is kept as it is and is not renumbered.
+
+### When a batch fails part way
+
+It rejects, and the error's `data` is a `SignTransactionBulkFailure`:
+
+```ts
+import type { JoeyRpcError, SignTransactionBulkFailure } from '@joeywallet/wallet-sdk'
+
+try {
+  await joey.signTransactionBulk({ tx_list, submit: true })
+} catch (e) {
+  const data = (e as JoeyRpcError).data as SignTransactionBulkFailure | undefined
+  if (!data) throw e
+
+  for (const entry of data.results) {
+    switch (entry.status) {
+      case 'submitted': break                 // on the ledger; entry.hash is real
+      case 'failed':    break                 // definite; entry.engine_result says why
+      case 'unknown':   break                 // may yet be validated — resolve by hash
+      case 'signed':    break                 // never broadcast; submit it as it stands
+      case 'stranded':  break                 // never broadcast and now dead — re-sign
+    }
+  }
+}
+```
+
+Every blob comes back, including the ones that were never broadcast, so you
+resume from `failedIndex` instead of asking the user to approve the batch again.
+
+The `signed` / `stranded` split is the one thing you cannot work out for
+yourself. The wallet reads the account's actual sequence once the batch stops
+and walks the entries it never broadcast **in the order you would resubmit
+them**: an entry is `signed` when the replay protection it holds is what the
+ledger is at, and `stranded` when it is not — either already consumed, or behind
+a gap this batch will never fill. In the ordinary case that follows the failing
+code, because a `tec*` reached a ledger and consumed its sequence number while a
+`tem*`/`tef*`/`tel*` consumed nothing. It does **not** follow the code once you
+set your own `Sequence` values or use tickets, which is why it is computed
+rather than inferred: a ticketed entry holds no sequence at all, so a failure
+ahead of it leaves it perfectly submittable and it comes back `signed`; and two
+entries you numbered identically can never both be `signed`. `unknown` settles
+neither question and must not be treated as `failed`: the transaction may still
+be validated, so resubmitting it is not safe.
+
+Submit the `signed` entries in the order they appear. They are a chain — each
+one's number only becomes current once the one before it has applied.
+
+`failedIndex` is zero-based and every earlier transaction succeeded, and that
+meaning is identical on Joey mobile over WalletConnect. **The record around it is
+not.** Mobile rejects with `data` as a JSON *string* — WalletConnect types error
+`data` as one — holding `{failedIndex, signedTxs}`, where `signedTxs` is an array
+of bare `tx_json` carrying no `status`, and its `message` is the bare engine
+token (`tecPATH_PARTIAL`) rather than a sentence. Here `data` is an object
+holding `{failedIndex, results}`. A dapp integrating both wallets branches on the
+container and on the array's name; `failedIndex` is what transfers unchanged.
 
 > **`signTransactionBulk` is not XLS-56 `Batch`.** They are different things and
 > Joey keeps them apart deliberately. A `Batch` is a *single* transaction
@@ -237,11 +317,6 @@ remaining transactions were never signed.
 > its own — and with no atomicity at all. If transaction 3 fails, 1 and 2 have
 > still happened.
 
-> **Not yet implemented in the shipping extension.** `signTransactionBulk`
-> currently answers `INVALID_PARAMS` (-32602) to every caller, valid lists
-> included. The method, its parameters and its cap are final; its execution
-> semantics are not, and shipping a half-answer would be worse than an honest
-> refusal. Use `signAndSubmitTransaction` in a loop until this note goes away.
 
 ---
 
@@ -532,7 +607,7 @@ a one-line import change.
 | `signTransaction({ tx_json, account?, chain?, autofill? })` | `{ tx_json, tx_blob, hash }` |
 | `signAndSubmitTransaction(…same…)` | the above plus `engine_result`, `engine_result_message` |
 | `signTransactionFor({ tx_signer, tx_json, account?, chain?, autofill? })` | `{ tx_json, tx_blob, hash }` |
-| `signTransactionBulk({ tx_list, submit, account?, chain?, autofill? })` | `SignTransactionResult[]` — see the note above; not yet implemented |
+| `signTransactionBulk({ tx_list, submit, account?, chain?, autofill? })` | `SignAndSubmitTransactionResult[]` — `engine_result` only when `submit: true` |
 | `signIn(params?)` | `{ address, publicKey, signature, message?, tx_blob? }` |
 | `request({ method, params })` | escape hatch for newer wallet methods |
 | `on(event, listener)` / `off(event, listener)` | subscription |

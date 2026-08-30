@@ -228,8 +228,18 @@ export async function submitBulkTransactions(
       const result = results[index]
       return {
         ...(id === undefined ? {} : { id }),
-        // Joey aborts the batch at the first failure, so a missing entry means
-        // this transaction was never signed.
+        // A resolved bulk request carries one entry per transaction, so every
+        // one of these is `true`. The guard stays because the alternative
+        // reading — an index with no entry silently becoming `accepted: true`
+        // with no hash — is the failure this shape exists to prevent.
+        //
+        // A batch that fails part way *rejects*, and `envelope` turns that into
+        // GemWallet's error response. The signed blobs and the failing index
+        // are on the error's `data` (`SignTransactionBulkFailure`); mapping
+        // them onto per-transaction `accepted` flags would be a better answer
+        // for a GemWallet dapp than an error, and is deliberately left as a
+        // change to this package's own contract rather than smuggled in with
+        // the wallet's.
         accepted: result !== undefined,
         ...(result === undefined ? {} : { hash: result.hash }),
       }

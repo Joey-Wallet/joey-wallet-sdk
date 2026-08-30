@@ -245,6 +245,26 @@ export interface SignTransactionForParams<TTx extends TransactionLike = AnyTrans
    */
   tx_signer: string
   tx_json: TTx
+  /**
+   * **Ignored on this method.** Joey never autofills a multisign entry, and
+   * passing `true` does not make it.
+   *
+   * The field is here because the parameter shape is shared with the other
+   * signing methods, not because it does anything. Your `tx_json` is signed
+   * exactly as you sent it, so it must already carry `Fee`, `Sequence` and
+   * `LastLedgerSequence` — otherwise you get a real signature over a
+   * transaction `rippled` will not accept, and no error until you submit it.
+   *
+   * The reason is that a multisign signature is one of several over *identical
+   * bytes*. All three fields are inside the signed bytes, so two signers who
+   * approve a few seconds apart would read two different `LastLedgerSequence`
+   * values and the assembled transaction would validate at most one of their
+   * signatures. The `Fee` is worse: the rule is `base_fee x (1 + signatures)`,
+   * a wallet contributes one signature and cannot know how many others the
+   * signer list requires, and a coordinator cannot raise a `Fee` afterwards
+   * without discarding every signature it has already collected. The one party
+   * who can choose these is the coordinator assembling the transaction — you.
+   */
   autofill?: boolean
 }
 
@@ -276,6 +296,78 @@ export interface SignTransactionBulkParams<TTx extends TransactionLike = AnyTran
    * `false`; state your intent and neither default applies to you.
    */
   submit: boolean
+}
+
+/**
+ * What became of one transaction of a bulk request that failed part way.
+ *
+ * The five values divide on two questions only the wallet can answer: did this
+ * transaction get a definite answer, and is the replay protection it holds —
+ * its sequence number, or its ticket — still reachable?
+ *
+ *  - `submitted` — validated `tesSUCCESS`. It happened; `hash` is on the ledger.
+ *  - `failed` — a definite answer that is not success. `engine_result` says
+ *    which. Resubmitting this blob is pointless.
+ *  - `unknown` — **do not treat this as `failed`.** Either the submission got
+ *    no answer at all, or it sits behind one that did not. It may yet be
+ *    validated, so resubmitting is not safe. Resolve it by its `hash` first.
+ *  - `signed` — signed, never broadcast, and still submittable exactly as it
+ *    stands: it spends a ticket nothing touched, or it holds the sequence
+ *    number the account is now at. Submit the `signed` entries in the order
+ *    they appear — they are a chain.
+ *  - `stranded` — signed, never broadcast, and dead. The sequence it holds is
+ *    either already consumed or sits behind a gap this batch will never fill,
+ *    so it can never apply. Discard it and ask the user again.
+ *
+ * The last two are decided per entry against the account's actual sequence, not
+ * per batch off the failing transaction's code — the code alone is right only
+ * for a contiguous run the wallet numbered itself, and both a ticket and a
+ * `Sequence` you set yourself break that assumption, in opposite directions.
+ */
+export type BulkEntryStatus = 'submitted' | 'failed' | 'unknown' | 'signed' | 'stranded'
+
+/** One entry of {@link SignTransactionBulkFailure.results}. */
+export interface BulkEntryResult extends SignTransactionResult {
+  status: BulkEntryStatus
+  /** The ledger's own token for this transaction, when it produced one. */
+  engine_result?: string
+  engine_result_message?: string
+}
+
+/**
+ * The `data` on the error a partially-executed `signTransactionBulk` rejects
+ * with.
+ *
+ * A bulk request with `submit: true` signs every transaction before it
+ * broadcasts any of them, so the blobs exist whatever happens at index 3 and
+ * you get all of them back. Resume from `failedIndex` rather than asking the
+ * user to approve the whole batch again.
+ *
+ * ```ts
+ * try {
+ *   await joey.signTransactionBulk({ tx_list, submit: true })
+ * } catch (error) {
+ *   const data = (error as JoeyRpcError).data as SignTransactionBulkFailure | undefined
+ *   if (data) {
+ *     // data.results[i].status tells you what to do with entry i.
+ *   }
+ * }
+ * ```
+ *
+ * Joey mobile rejects a bulk request over WalletConnect with the same
+ * `failedIndex` — zero-based, every earlier transaction succeeded, and the one
+ * thing that transfers between the two wallets unchanged. The record carrying
+ * it does not: mobile's `data` is a JSON *string* (WalletConnect types error
+ * `data` as one) holding `{failedIndex, signedTxs}`, where `signedTxs` is bare
+ * `tx_json` with no `status` on it, and its `message` is the engine token
+ * alone. Branch on the container and the array name; do not write one handler
+ * for both and expect it to parse.
+ */
+export interface SignTransactionBulkFailure {
+  /** Zero-based index of the first entry that did not succeed. */
+  failedIndex: number
+  /** Every transaction in the batch, in the order you sent them. */
+  results: BulkEntryResult[]
 }
 
 /**
