@@ -1,6 +1,6 @@
 {
   "name": "@joeywallet/gemwallet-compat",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "GemWallet's @gemwallet/api surface, implemented over Joey Wallet. Migrate a dapp by changing one import.",
   "license": "MIT",
   "homepage": "https://github.com/joeywallet/joey-wallet-sdk#readme",
