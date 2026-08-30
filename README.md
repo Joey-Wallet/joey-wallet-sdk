@@ -67,22 +67,18 @@ tests import `@joeywallet/wallet-sdk` through its `exports` map, which points
 at `dist/`, so a bare `vitest run` would grade whatever was last built. Use
 `pnpm test:only` when you know `dist/` is fresh.
 
-### Developing against the extension
+### How this is verified against the wallet
 
 The Joey Wallet extension consumes this SDK as a published dependency and keeps
-a **wire contract test** that drives the real extension background against the
-real built SDK. That test is the thing that catches protocol drift between the
-two repos, and it lives with the wallet because the wallet is what must honour
-the contract.
+a **wire contract test** that drives the real wallet background against the real
+built SDK — no mocks on either side. That test is what catches the protocol
+drifting between the two, and it lives with the wallet because the wallet is the
+side that must *honour* the contract; this repo only declares it.
 
-To develop both together, link this workspace into the extension checkout:
-
-```bash
-pnpm --dir ../joey-browser-extension/apps/extension link ../../../joey-wallet-sdk/packages/sdk
-```
-
-Run the extension's contract suite before opening a PR that changes anything in
-`src/types.ts`, `src/client.ts`, or the error codes.
+The practical consequence for a contributor: a change to `src/types.ts`,
+`src/client.ts`, or the error codes is a change to a contract with a consumer
+that cannot see your PR. Describe the wire effect in your changeset, and expect
+protocol changes to take longer to land than the diff suggests.
 
 ## Releasing
 
