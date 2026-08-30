@@ -18,6 +18,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm ts:check
-      - run: pnpm lint
-      - run: pnpm test
+      # One step, calling the same script the release workflow calls. Listing the
+      # stages here instead let CI drift from `verify` — and it did: both ran
+      # ts:check before anything was built, which cannot work on a clean checkout.
+      - run: pnpm verify

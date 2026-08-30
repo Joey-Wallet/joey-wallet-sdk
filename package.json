@@ -21,8 +21,8 @@
     "ts:check": "pnpm -r ts:check",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "//verify": "What CI runs, and what a release must pass.",
-    "verify": "pnpm ts:check && pnpm lint && pnpm test",
+    "//verify": "What CI runs, and what a release must pass. Build comes FIRST and is not optional: gemwallet-compat resolves @joeywallet/wallet-sdk through its exports map, which points at dist/, so on a clean checkout `tsc` cannot find the module at all and ts:check fails with TS2307. test:only rather than test, because the build has already happened here.",
+    "verify": "pnpm build && pnpm ts:check && pnpm lint && pnpm test:only",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"
