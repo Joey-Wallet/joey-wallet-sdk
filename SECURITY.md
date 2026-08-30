@@ -5,7 +5,7 @@
 Please report security issues privately, not as a public GitHub issue.
 
 Use GitHub's [private vulnerability
-reporting](https://github.com/joeywallet/joey-wallet-sdk/security/advisories/new)
+reporting](https://github.com/Joey-Wallet/joey-wallet-sdk/security/advisories/new)
 on this repository.
 
 Include what the issue is, the versions affected, and a reproduction if you
