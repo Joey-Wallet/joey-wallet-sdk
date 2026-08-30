@@ -30,3 +30,7 @@ tmp/
 .DS_Store
 Thumbs.db
 
+
+# Publishing runbook — credential setup and release mechanics for the repo
+# owner. Kept locally, never pushed.
+docs/

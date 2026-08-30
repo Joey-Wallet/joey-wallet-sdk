@@ -30,9 +30,18 @@ a contract with a consumer that cannot see your PR. Two consequences:
 
 The public API is every TypeScript symbol reachable from an `exports` entry
 point, **plus** the JSON-RPC method names, parameter shapes and error codes sent
-over the wire. Making the wallet refuse a call it previously accepted is a
-breaking change even when nothing in the type surface moved. See
-[docs/PUBLISHING.md](docs/PUBLISHING.md).
+over the wire.
+
+All of these are **major**, and the last one is the one that gets missed:
+
+- Removing or narrowing anything exported from an `exports` entry point
+- Renaming a JSON-RPC method, or changing a parameter shape the SDK sends
+- Changing an error code, or the conditions under which one is thrown
+- **Making the wallet refuse a call it previously accepted** — even with no
+  change to the type surface. A dapp relying on the old behaviour breaks at
+  runtime with a green typecheck.
+
+If in doubt, write it down in the changeset and let it be a major.
 
 ## Changesets
 
