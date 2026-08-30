@@ -1,4 +1,5 @@
 # Dependencies
+docs/
 node_modules/
 .pnpm-store/
 
@@ -29,4 +30,3 @@ tmp/
 .DS_Store
 Thumbs.db
 
-docs/
