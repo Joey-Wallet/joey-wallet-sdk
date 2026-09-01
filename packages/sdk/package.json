@@ -1,6 +1,6 @@
 {
   "name": "@joeywallet/wallet-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Dependency-free TypeScript SDK for the Joey Wallet browser extension (XLS-72d / Wallet Standard).",
   "license": "MIT",
   "homepage": "https://github.com/Joey-Wallet/joey-wallet-sdk#readme",
