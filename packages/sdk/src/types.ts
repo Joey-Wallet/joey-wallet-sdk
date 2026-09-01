@@ -413,13 +413,76 @@ export interface SignInParams {
   resources?: string[]
 }
 
-export interface SignInResult {
+/**
+ * What a software account answers with: a signature over a CAIP-122 message.
+ *
+ * `mode` is optional because wallets predating the second shape do not send
+ * it. Do not branch on it being `caip122` — branch on the *other* shape, with
+ * {@link isChallengeSignIn}, so an older wallet still takes this path.
+ */
+export interface Caip122SignInResult {
   address: string
   publicKey: string
   /** Hex-encoded signature. */
   signature: string
   /** The exact string that was signed. Rebuild it to verify the signature. */
   message: string
+  mode?: 'caip122'
+}
+
+/**
+ * What a hardware account answers with instead.
+ *
+ * A Ledger cannot produce the result above. The XRP app signs transactions and
+ * has no message primitive at all, so there is no command to ask it for a
+ * CAIP-122 signature — the wallet proves ownership by signing a canonical
+ * 1-drop Payment on the device instead, and hands you the signed transaction.
+ *
+ * The transaction is built entirely by the wallet and is unsubmittable twice
+ * over: `Sequence` is `0`, which is never valid for a funded account, and the
+ * destination is the signing account itself, which `rippled` refuses as
+ * `temREDUNDANT`. It carries your challenge in a memo, as
+ * `{"wallet":"joey","challenge":"<nonce>"}` hex-encoded.
+ *
+ * ## Verifying one
+ *
+ * `signedTx` is `JSON.stringify` of the *bare* decoded transaction — not
+ * wrapped in `{ tx_json: … }` — so `JSON.parse` it and use the result as a
+ * transaction object. Re-encode it with `ripple-binary-codec` and check the
+ * signature, then check the signer is the address you are about to trust.
+ *
+ * There is no `message` or `signature` field here, and that is the trap this
+ * type exists to close: a verifier written for the CAIP-122 shape reads three
+ * `undefined`s, sends them, and reports "signature did not verify" for a
+ * signature the user made correctly on their device.
+ */
+export interface ChallengeSignInResult {
+  address: string
+  /** The bare signed transaction, JSON-encoded. */
+  signedTx: string
+  mode: 'challenge-v1'
+}
+
+/**
+ * The result of {@link SignInParams}, in whichever form the account can make.
+ *
+ * Which one you get is the wallet’s decision and not yours: it depends on the
+ * account the user picks, and they pick it after your call has been made.
+ * Narrow with {@link isChallengeSignIn} before reading either shape.
+ */
+export type SignInResult = Caip122SignInResult | ChallengeSignInResult
+
+/**
+ * Whether a sign-in came back as a signed transaction rather than a message.
+ *
+ * Tests for the field rather than for `mode`, deliberately: wallets older than
+ * the second shape send no `mode` at all, and a check written the other way
+ * round would misroute every one of them.
+ */
+export function isChallengeSignIn(
+  result: SignInResult,
+): result is ChallengeSignInResult {
+  return 'signedTx' in result
 }
 
 /* -------------------------------------------------------------------- events */

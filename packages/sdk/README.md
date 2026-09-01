@@ -372,32 +372,91 @@ that screen. Both are unambiguous; only the pair "transaction 2 of 5" next to
 
 ## Sign in
 
-`signIn` authenticates a user without a transaction. The default mode signs a
-[CAIP-122](https://namespaces.chainagnostic.org/xrpl/caip122) message under a
-non-transaction domain separator, so the signature is cryptographically
+`signIn` authenticates a user without a transaction. For a software account it
+signs a [CAIP-122](https://namespaces.chainagnostic.org/xrpl/caip122) message
+under a non-transaction domain separator, so the signature is cryptographically
 incapable of being replayed as a transaction signature.
 
+**It has two result shapes, and you must narrow before reading either.** Which
+one you get is the wallet’s decision, not yours: it depends on the account the
+user picks, and they pick it inside the wallet after your call has been made.
+
 ```ts
+import { isChallengeSignIn } from '@joeywallet/wallet-sdk'
+
 const result = await joey.signIn({
   statement: 'Sign in to Example Exchange',
   // nonce defaults to one the wallet generates; supply your own if your
   // backend issues it.
 })
 
-await fetch('/api/session', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    address: result.address,
-    publicKey: result.publicKey,
-    message: result.message,
-    signature: result.signature,
-  }),
-})
+if (isChallengeSignIn(result)) {
+  // A hardware account. Verify the signed transaction.
+  await fetch('/api/session/tx', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ address: result.address, signedTx: result.signedTx }),
+  })
+} else {
+  await fetch('/api/session', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      address: result.address,
+      publicKey: result.publicKey,
+      message: result.message,
+      signature: result.signature,
+    }),
+  })
+}
 ```
 
-Verify the signature server-side against `result.message` and check the nonce,
-the domain and the issue time inside that message before trusting it.
+Verify the CAIP-122 signature server-side against `result.message` and check the
+nonce, the domain and the issue time inside that message before trusting it.
+
+### Hardware accounts sign a transaction instead
+
+A Ledger cannot produce the result above. The XRP app signs transactions and has
+no message primitive at all, so there is no command to ask it for a CAIP-122
+signature. Rather than refuse the sign-in, the wallet proves ownership by having
+the device sign a canonical 1-drop Payment and hands you the signed transaction
+as `signedTx`.
+
+That transaction is built entirely by the wallet and is unsubmittable twice
+over: `Sequence` is `0`, which is never valid for a funded account, and the
+destination is the signing account itself, which `rippled` refuses as
+`temREDUNDANT`. Your challenge travels in a memo as
+`{"wallet":"joey","challenge":"<nonce>"}`, hex-encoded.
+
+`signedTx` is `JSON.stringify` of the **bare** decoded transaction — not wrapped
+in `{ tx_json: … }` — so `JSON.parse` it and use the result as a transaction
+object. To verify one, re-encode it and check the signature, then check the
+signer is the address you are about to trust:
+
+```ts
+import { encode } from 'ripple-binary-codec'
+import { verifySignature } from 'ripple-keypairs' // or your verifier of choice
+
+const tx = JSON.parse(signedTx)
+const ok = verifySignature(encode(tx)) // signatureValid, signedBy
+// Bind the session to the address that actually signed, never to one the
+// client claimed: without that check a valid signature made with any key can
+// mint a session for any account.
+```
+
+This is byte-identical to what the Joey mobile wallet puts in a WalletConnect
+session's `xrpl_signin_v1_signed_tx`, so a backend that already verifies mobile
+Joey sign-ins verifies these unchanged.
+
+Narrow with `isChallengeSignIn`, which tests for the `signedTx` field rather
+than for `mode`. Wallets older than this shape send no `mode` at all, so a check
+written the other way round misroutes every one of them.
+
+> **If you skip the narrowing**, a verifier written for the CAIP-122 shape reads
+> `publicKey`, `message` and `signature` as `undefined`, posts them, and reports
+> "signature did not verify" — for a signature the user made correctly on their
+> device, seconds earlier. The failure is silent on the wallet side and looks
+> like a rejected login on yours.
 
 Pass `resources` to name the scope you are asking for. It is shown on the
 approval screen and written into the message's `Resources:` section, so it is

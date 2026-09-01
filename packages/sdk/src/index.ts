@@ -54,6 +54,7 @@ export {
 export {
   JOEY_CHAINS,
   chainForNetworkId,
+  isChallengeSignIn,
   isJoeyChain,
   networkIdForChain,
   type Amount,
@@ -73,6 +74,8 @@ export {
   type PathStep,
   type SignAndSubmitTransactionResult,
   type SigningContextParams,
+  type Caip122SignInResult,
+  type ChallengeSignInResult,
   type SignInMode,
   type SignInParams,
   type SignInResult,
