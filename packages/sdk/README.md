@@ -731,12 +731,22 @@ a one-line import change.
 
 ### Transactions Joey will not sign for a dapp
 
-Six types, rejected whichever method carries them and at every nesting level,
-with a message saying so. Read the list rather than discovering it by rejection:
+`JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES` is now **empty**, and no longer tells
+you what will be rejected:
 
 ```ts
 import { JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES } from '@joeywallet/wallet-sdk'
+// readonly string[] — []
 ```
+
+It was always a published mirror rather than a gate: no SDK method reads it, and
+`signTransaction`, `signTransactionFor` and `signTransactionBulk` hand your
+`tx_json` to the provider unread. Emptying it removed the advance notice, not an
+enforcement point. **A passing check against this constant is not permission to
+sign.**
+
+The wallet keeps its own rules and applies them at approval time, at every
+nesting level. At the time of writing it still refuses:
 
 | Type | Why |
 | ---- | --- |
@@ -747,7 +757,7 @@ import { JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES } from '@joeywallet/wallet-sdk'
 | `SetHook` | Installs code that runs on every future transaction. |
 | `Batch` | Carries other transactions inside `RawTransactions`, which the approval screen cannot render — see the note under bulk signing. |
 
-Two more rules are not expressible as a type name and are enforced anyway:
+Plus two rules that were never expressible as a type name:
 
 - **`AccountSet` is conditionally refused.** It is permitted for routine flags
   (`asfDefaultRipple` and the rest) and refused when it sets or clears one that
@@ -759,6 +769,9 @@ Two more rules are not expressible as a type name and are enforced anyway:
   `rippled` rejects one submitted over the network.
 
 None of these is distinguishable from an ordinary transaction in a confirmation
-dialog someone is skimming, which is why they are refused rather than surfaced
-for approval. Users perform them from the Joey UI, where the wording can be as
-blunt as it needs to be.
+dialog someone is skimming, which is why the wallet refuses them rather than
+surfacing them for approval. Users perform them from the Joey UI, where the
+wording can be as blunt as it needs to be.
+
+Because the constant no longer lists them, expect these to arrive as a `4100`
+from the approval queue and handle them there.
