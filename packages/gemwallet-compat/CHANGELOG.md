@@ -1,5 +1,12 @@
 # @joeywallet/gemwallet-compat
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [64bfd27]
+  - @joeywallet/wallet-sdk@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes
