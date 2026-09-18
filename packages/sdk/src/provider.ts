@@ -148,39 +148,32 @@ export const APPROVAL_TIMEOUT_MS = 300_000
 export const MAX_BULK_TRANSACTIONS = 32
 
 /**
- * Transaction types Joey refuses to sign for a website, whatever the user
- * clicks and whichever method carries them.
+ * Transaction types this SDK declares as refused for a website. Now empty.
  *
- * Published so a dapp can check before it builds a flow around one, and so the
- * refusal is a documented rule rather than a surprise `4100`. Every entry hands
- * over or destroys the account itself:
+ * **This list no longer describes what the wallet does.** It is a published
+ * constant, not a gate: nothing in this SDK reads it, and no signing method
+ * consults it — `signTransaction`, `signTransactionFor` and
+ * `signTransactionBulk` hand `tx_json` to the provider unread. Emptying it
+ * removed an advertisement, not an enforcement point.
  *
- * - `SetRegularKey`, `SignerListSet` and `DelegateSet` (XLS-75) each grant
- *   permanent authority to act as the account, by three separate mechanisms.
- * - `AccountDelete` is irreversible.
- * - `SetHook` installs code that runs on every future transaction.
- * - `Batch` (XLS-56) carries other transactions inside `RawTransactions`, and
- *   Joey's approval screen renders the outer transaction. A user cannot consent
- *   to something they were never shown, so it is refused until the review
- *   screen can render inner transactions individually.
+ * The wallet keeps its own rules and applies them at approval time, at every
+ * nesting level. At the time of writing it still refuses `SetRegularKey`,
+ * `SignerListSet`, `DelegateSet` (XLS-75), `AccountDelete`, `SetHook` and
+ * `Batch` (XLS-56) — each of which hands over or destroys the account itself,
+ * or, for `Batch`, hides its real payload in `RawTransactions` where the
+ * approval screen cannot render it for consent. It also refuses an `AccountSet`
+ * that sets or clears a control-changing flag (`asfDisableMaster`,
+ * `asfRequireAuth`, `asfNoFreeze` and that family), and the pseudo-transactions
+ * `EnableAmendment`, `SetFee` and `UNLModify`, which no account signs.
  *
- * Two rules are not expressible as a type name and are enforced anyway:
- * `AccountSet` is refused when it sets or clears a flag that changes who
- * controls the account (`asfDisableMaster`, `asfRequireAuth`, `asfNoFreeze` and
- * the rest of that family) and permitted otherwise; and the ledger's
- * pseudo-transactions — `EnableAmendment`, `SetFee`, `UNLModify` — are refused
- * because no account signs one.
+ * So a dapp can no longer check this constant to find out what will be
+ * rejected. Expect those refusals to arrive as a `4100` from the approval
+ * queue, and handle them there.
  *
- * The wallet checks at every nesting level, not just the top.
+ * @deprecated Empty, and no longer a description of wallet behaviour. Do not
+ * treat a passing check against it as permission to sign.
  */
-export const JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES: readonly string[] = Object.freeze([
-  'SetRegularKey',
-  'SignerListSet',
-  'DelegateSet',
-  'AccountDelete',
-  'SetHook',
-  'Batch',
-])
+export const JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES: readonly string[] = Object.freeze([])
 
 export function isJoeyInjectedProvider(value: unknown): value is JoeyInjectedProvider {
   if (typeof value !== 'object' || value === null) return false

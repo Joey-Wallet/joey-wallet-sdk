@@ -273,10 +273,11 @@ export interface SignTransactionForParams<TTx extends TransactionLike = AnyTrans
  *
  * **This is not XLS-56 `Batch`, and the two must not be confused.** A `Batch`
  * is a single transaction that carries others inside `RawTransactions` and
- * commits them atomically on-ledger; Joey refuses to sign one for a website
- * (see {@link JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES}) because its approval
- * screen renders the outer transaction and a user cannot consent to inner ones
- * they were never shown. `signTransactionBulk` is the opposite arrangement:
+ * commits them atomically on-ledger; the wallet refuses to sign one for a
+ * website because its approval screen renders the outer transaction and a user
+ * cannot consent to inner ones they were never shown. That refusal arrives as a
+ * `4100` at approval time — {@link JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES} is
+ * empty and will not warn you about it. `signTransactionBulk` is the opposite arrangement:
  * ordinary, separate transactions, each rendered on its own page of the
  * approval, each signed on its own, with no on-ledger atomicity at all. If
  * transaction 3 fails, 1 and 2 have still happened.
