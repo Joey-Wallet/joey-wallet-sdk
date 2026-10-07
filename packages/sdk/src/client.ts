@@ -14,7 +14,9 @@
  */
 import { JOEY_ERROR_CODES, JoeyRpcError } from './errors.js'
 import {
+  JOEY_CAPABILITIES,
   JOEY_RPC_METHODS,
+  hasCapability,
   invoke,
   subscribe,
   type JoeyInjectedProvider,
@@ -50,6 +52,11 @@ export interface Joey {
   readonly version: string | undefined
   /** Reverse-DNS identity, `xyz.joeywallet`. */
   readonly rdns: string | undefined
+  /**
+   * The capabilities the provider advertises — see `JOEY_CAPABILITIES`.
+   * `[]` for an extension older than the field.
+   */
+  readonly capabilities: readonly string[]
   /** Granted addresses, read synchronously. `[]` until the user connects. */
   readonly accounts: readonly string[]
   /** The chain the wallet is on, or `null` before the first connect. */
@@ -57,6 +64,14 @@ export interface Joey {
 
   /** Synchronous. True once the user has granted this origin an account. */
   isConnected(): boolean
+
+  /**
+   * Synchronous. Whether the installed wallet signs an XLS-56 `Batch` for a
+   * website — co-signed ones included. Ask before you build one: a wallet that
+   * answers `false` refuses every `Batch` with `4100`, and you should fall back
+   * to separate transactions. See `BatchTransaction`.
+   */
+  supportsBatch(): boolean
 
   connect(params?: ConnectParams): Promise<ConnectResult>
   disconnect(): Promise<void>
@@ -79,6 +94,9 @@ export interface Joey {
 
   /**
    * One approval, up to `MAX_BULK_TRANSACTIONS` transactions, signed in order.
+   *
+   * Not XLS-56 `Batch`: these are separate transactions with no atomicity. A
+   * `Batch` goes through `signTransaction` / `signAndSubmitTransaction`.
    *
    * Resolves with one entry per transaction, in the order you sent them.
    * `engine_result` is present only when you asked for `submit: true` — with
@@ -211,6 +229,9 @@ export function createJoeyClient(provider: JoeyInjectedProvider): Joey {
     provider,
     version: typeof provider.version === 'string' ? provider.version : undefined,
     rdns: typeof provider.rdns === 'string' ? provider.rdns : undefined,
+    capabilities: Array.isArray(provider.capabilities)
+      ? provider.capabilities.filter((entry): entry is string => typeof entry === 'string')
+      : [],
 
     get accounts() {
       return provider.accounts ?? []
@@ -223,6 +244,10 @@ export function createJoeyClient(provider: JoeyInjectedProvider): Joey {
     isConnected() {
       if (typeof provider.isConnected === 'function') return provider.isConnected()
       return (provider.accounts ?? []).length > 0
+    },
+
+    supportsBatch() {
+      return hasCapability(provider, JOEY_CAPABILITIES.batch)
     },
 
     async connect(params) {

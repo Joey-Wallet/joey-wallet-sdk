@@ -33,6 +33,7 @@ export {
 export {
   APPROVAL_TIMEOUT_MS,
   CAIP294_ANNOUNCE_EVENT,
+  JOEY_CAPABILITIES,
   CAIP294_PROMPT_EVENT,
   JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES,
   JOEY_RDNS,
@@ -42,9 +43,11 @@ export {
   REQUEST_TIMEOUT_MS,
   WALLET_STANDARD_APP_READY_EVENT,
   WALLET_STANDARD_REGISTER_EVENT,
+  hasCapability,
   invoke,
   isJoeyInjectedProvider,
   subscribe,
+  type JoeyCapability,
   type JoeyInjectedProvider,
   type JoeyProviderEventName,
   type JoeyRequestArguments,
@@ -52,6 +55,8 @@ export {
 } from './provider.js'
 
 export {
+  BATCH_FLAGS,
+  TF_INNER_BATCH_TXN,
   JOEY_CHAINS,
   chainForNetworkId,
   isChallengeSignIn,
@@ -59,6 +64,10 @@ export {
   networkIdForChain,
   type Amount,
   type AnyTransaction,
+  type BatchInnerTransaction,
+  type BatchSigner,
+  type BatchSubmitOutcome,
+  type BatchTransaction,
   type ConnectParams,
   type ConnectResult,
   type IssuedCurrencyAmount,

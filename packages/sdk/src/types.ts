@@ -142,6 +142,130 @@ export interface AnyTransaction extends TransactionLike {
   [field: string]: unknown
 }
 
+/* --------------------------------------------------------------- XLS-56 Batch */
+
+/**
+ * XLS-56 `Batch` mode flags: what the ledger does when an inner transaction
+ * fails. Exactly one goes in the outer `Flags`; the wallet refuses none or two.
+ *
+ * `tfAllOrNothing` is the one to reach for: every inner transaction applies, or
+ * none does. Under it a batch that fails is still `tesSUCCESS` (its fee is
+ * charged and its sequence consumed) with **no inner transaction on the ledger
+ * at all** — read {@link SignAndSubmitTransactionResult.batch}, never the outer
+ * `engine_result`, to know whether it did anything.
+ */
+export const BATCH_FLAGS = {
+  tfAllOrNothing: 0x00010000,
+  tfOnlyOne: 0x00020000,
+  tfUntilFailure: 0x00040000,
+  tfIndependent: 0x00080000,
+} as const
+
+/**
+ * The flag every inner transaction of a `Batch` carries, `tfInnerBatchTxn`.
+ * It is what makes an inner transaction unsubmittable outside its batch.
+ */
+export const TF_INNER_BATCH_TXN = 0x40000000
+
+/**
+ * Another account's signature over a batch: one entry of `BatchSigners`.
+ *
+ * Under the `BatchV1_1` amendment it signs the outer `Account`, the outer
+ * `Sequence` (or its `TicketSequence`), the outer `Flags`, every inner
+ * transaction id, and its own `Account` — **not** the outer `Fee` or
+ * `LastLedgerSequence`. So once it is attached the batch may not be renumbered,
+ * re-moded or have an inner transaction changed; the fee may still be raised.
+ * The outer account's own signature does not cover `BatchSigners`.
+ */
+export interface BatchSigner {
+  BatchSigner: {
+    Account: string
+    SigningPubKey: string
+    TxnSignature: string
+  }
+}
+
+/**
+ * One inner transaction of a `Batch`, as it must arrive for
+ * `autofill: false`: `Fee: "0"`, an empty `SigningPubKey`, no signature, and
+ * `Flags` carrying {@link TF_INNER_BATCH_TXN}. A `Sequence` — or `Sequence: 0`
+ * with a `TicketSequence`. The signing account's own inner transactions take
+ * the outer `Sequence` + 1, + 2, … in order and carry no `LastLedgerSequence`;
+ * another account's number themselves on that account (usually by ticket).
+ */
+export interface BatchInnerTransaction extends AnyTransaction {
+  Account: string
+  Fee: '0'
+  SigningPubKey: ''
+  Flags: number
+}
+
+/**
+ * An XLS-56 `Batch`, as Joey signs one for a website.
+ *
+ * Joey signs the **outer** transaction as the signing account, and renders
+ * every inner transaction on its own card first. Every inner transaction is
+ * held to the same rules as a top-level one — an account-control type inside a
+ * batch is refused exactly as it is outside one, whoever's it is. Inner
+ * transactions belonging to other accounts are allowed when each of those
+ * accounts has signed through `BatchSigners`; Joey verifies every such
+ * signature (and that its key is the account's) before the user's key is
+ * used, and refuses a batch whose co-signatures do not match it. Joey never
+ * produces a `BatchSigner` itself.
+ *
+ * Send a co-signed batch complete, with `autofill: false`: every field is
+ * signed as given, and a `Batch` that carries `BatchSigners` or another
+ * account's inner transaction is refused with autofill on, because filling
+ * would invalidate the co-signatures. Check `supportsBatch()` first — an
+ * extension older than this SDK refuses every `Batch` with `4100`. A Ledger
+ * account cannot sign a `Batch` at all; the XRP app cannot display one.
+ */
+export interface BatchTransaction extends TransactionLike {
+  TransactionType: 'Batch'
+  Account: string
+  /** Exactly one of {@link BATCH_FLAGS}. */
+  Flags: number
+  Sequence: number
+  Fee: string
+  /** Two to eight. */
+  RawTransactions: Array<{ RawTransaction: BatchInnerTransaction }>
+  BatchSigners?: BatchSigner[]
+  [field: string]: unknown
+}
+
+/**
+ * What became of a submitted batch's inner transactions, as the ledger
+ * recorded them in the outer transaction's own ledger.
+ */
+export interface BatchSubmitOutcome {
+  /** The batch's mode, by name — `tfAllOrNothing` and the rest. */
+  mode?: keyof typeof BATCH_FLAGS
+  /**
+   * - `all` — every inner transaction applied.
+   * - `none` — none did. Under `tfAllOrNothing` this is a rolled-back batch:
+   *   the outer `engine_result` is still `tesSUCCESS`.
+   * - `some` — some did (the other three modes only).
+   * - `unknown` — the node could not say for at least one of them. Look the
+   *   `inner` hashes up yourself before acting on it.
+   */
+  applied: 'all' | 'some' | 'none' | 'unknown'
+  /** One entry per inner transaction, in `RawTransactions` order. */
+  inner: Array<{
+    /** The inner transaction's id: the hash it is recorded under if it applied. */
+    hash: string
+    account?: string
+    /**
+     * - `applied` — validated `tesSUCCESS`, its metadata's `ParentBatchID` the
+     *   outer transaction's hash.
+     * - `failed` — recorded with another result.
+     * - `not_applied` — the node holds the outer's ledger and this is not in it.
+     * - `unknown` — no definite answer.
+     */
+    status: 'applied' | 'failed' | 'not_applied' | 'unknown'
+    engine_result?: string
+  }>
+}
+
 /* ---------------------------------------------------------- method arguments */
 
 export interface ConnectParams {
@@ -206,7 +330,15 @@ export interface ConnectResult {
 export interface SignTransactionParams<TTx extends TransactionLike = AnyTransaction>
   extends SigningContextParams {
   tx_json: TTx
-  /** Let the wallet fill Fee / Sequence / LastLedgerSequence. Default true. */
+  /**
+   * Let the wallet fill Fee / Sequence / LastLedgerSequence. Default true.
+   *
+   * With `true` the wallet fills only fields you left out; it never replaces
+   * one you set. **Send a co-signed `Batch` with `false`** — one carrying
+   * `BatchSigners` or another account's inner transaction is refused with
+   * autofill on, because the co-signatures cover its `Sequence` and every
+   * inner transaction. See {@link BatchTransaction}.
+   */
   autofill?: boolean
 }
 
@@ -229,9 +361,20 @@ export interface SignTransactionResult {
 }
 
 export interface SignAndSubmitTransactionResult extends SignTransactionResult {
-  /** Preliminary engine result, e.g. `tesSUCCESS`. Not final until validated. */
+  /**
+   * Preliminary engine result, e.g. `tesSUCCESS`. Not final until validated.
+   * For a `Batch` it is the **outer** transaction's, and says nothing about the
+   * inner ones — read `batch`.
+   */
   engine_result?: string
   engine_result_message?: string
+  /**
+   * Present when the transaction submitted was an XLS-56 `Batch`: what became
+   * of its inner transactions. **Decide success from `batch.applied`, never
+   * from `engine_result`.** An all-or-nothing batch whose inner transaction
+   * failed is `tesSUCCESS` with nothing applied.
+   */
+  batch?: BatchSubmitOutcome
 }
 
 export interface SignTransactionForParams<TTx extends TransactionLike = AnyTransaction>
@@ -272,15 +415,13 @@ export interface SignTransactionForParams<TTx extends TransactionLike = AnyTrans
  * N independent transactions, one approval, signed in order.
  *
  * **This is not XLS-56 `Batch`, and the two must not be confused.** A `Batch`
- * is a single transaction that carries others inside `RawTransactions` and
- * commits them atomically on-ledger; the wallet refuses to sign one for a
- * website because its approval screen renders the outer transaction and a user
- * cannot consent to inner ones they were never shown. That refusal arrives as a
- * `4100` at approval time — {@link JOEY_DAPP_FORBIDDEN_TRANSACTION_TYPES} is
- * empty and will not warn you about it. `signTransactionBulk` is the opposite arrangement:
- * ordinary, separate transactions, each rendered on its own page of the
- * approval, each signed on its own, with no on-ledger atomicity at all. If
- * transaction 3 fails, 1 and 2 have still happened.
+ * ({@link BatchTransaction}) is a single transaction that carries others inside
+ * `RawTransactions` and commits them atomically on-ledger; send one through
+ * `signTransaction` or `signAndSubmitTransaction`, and the approval screen
+ * renders every inner transaction on its own card. `signTransactionBulk` is the
+ * opposite arrangement: ordinary, separate transactions, each signed on its
+ * own, with no on-ledger atomicity at all. If transaction 3 fails, 1 and 2 have
+ * still happened.
  */
 export interface SignTransactionBulkParams<TTx extends TransactionLike = AnyTransaction>
   extends SigningContextParams {

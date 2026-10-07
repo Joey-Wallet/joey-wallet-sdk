@@ -60,6 +60,12 @@ export interface JoeyInjectedProvider {
   readonly rdns?: string
   /** Version of the injected surface, not of the extension. */
   readonly version?: string
+  /**
+   * Named capabilities beyond the declared methods — see
+   * {@link JOEY_CAPABILITIES}. Absent on an extension older than the field,
+   * which has none of them.
+   */
+  readonly capabilities?: readonly string[]
   /** Granted addresses for this origin. `[]` until the user connects. */
   readonly accounts?: readonly string[]
   readonly chain?: JoeyChain | null
@@ -87,6 +93,33 @@ export interface JoeyInjectedProvider {
   removeListener?(event: JoeyProviderEventName, listener: (payload: never) => void): void
   /** Not implemented by Joey, but common enough elsewhere to be worth trying. */
   off?(event: JoeyProviderEventName, listener: (payload: never) => void): void
+}
+
+/**
+ * Capabilities a Joey provider may advertise in `capabilities`.
+ *
+ * A name is either in the provider's list or it is not; there is no version
+ * arithmetic to get wrong, and an extension too old to have the list has none
+ * of them.
+ *
+ * - `batch` — the wallet signs an XLS-56 `Batch` for a website: every inner
+ *   transaction is rendered and held to the same rules as a top-level one, and
+ *   a co-signed batch (another account's inner transaction carried by its
+ *   `BatchSigners` entry) is signed exactly as given with `autofill: false`,
+ *   its co-signatures verified first. A submitted batch's result carries
+ *   `batch`, what became of its inner transactions. Without it, every `Batch`
+ *   is refused with `4100`.
+ */
+export const JOEY_CAPABILITIES = {
+  batch: 'batch',
+} as const
+
+export type JoeyCapability = (typeof JOEY_CAPABILITIES)[keyof typeof JOEY_CAPABILITIES]
+
+/** Whether this provider advertises `capability`. False for one with no list. */
+export function hasCapability(provider: JoeyInjectedProvider, capability: JoeyCapability): boolean {
+  const list = provider.capabilities
+  return Array.isArray(list) && list.includes(capability)
 }
 
 /** The name Joey registers under with the Wallet Standard. */
@@ -157,11 +190,12 @@ export const MAX_BULK_TRANSACTIONS = 32
  * removed an advertisement, not an enforcement point.
  *
  * The wallet keeps its own rules and applies them at approval time, at every
- * nesting level. At the time of writing it still refuses `SetRegularKey`,
- * `SignerListSet`, `DelegateSet` (XLS-75), `AccountDelete`, `SetHook` and
- * `Batch` (XLS-56) — each of which hands over or destroys the account itself,
- * or, for `Batch`, hides its real payload in `RawTransactions` where the
- * approval screen cannot render it for consent. It also refuses an `AccountSet`
+ * nesting level — including inside an XLS-56 `Batch`, whose inner transactions
+ * are each rendered and judged like a top-level one. At the time of writing it
+ * still refuses `SetRegularKey`, `SignerListSet`, `DelegateSet` (XLS-75),
+ * `AccountDelete` and `SetHook` — each of which hands over or destroys the
+ * account itself. `Batch` is no longer refused by a wallet that advertises the
+ * `batch` capability (see {@link JOEY_CAPABILITIES}). It also refuses an `AccountSet`
  * that sets or clears a control-changing flag (`asfDisableMaster`,
  * `asfRequireAuth`, `asfNoFreeze` and that family), and the pseudo-transactions
  * `EnableAmendment`, `SetFee` and `UNLModify`, which no account signs.

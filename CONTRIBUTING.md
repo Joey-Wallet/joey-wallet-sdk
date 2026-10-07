@@ -75,9 +75,17 @@ somewhere userland can contain them.
   control of an account, and no approval dialog makes that safe, because the
   user cannot evaluate the consequence from transaction JSON. See
   `packages/gemwallet-compat/src/unsupported.ts`.
-- XLS-56 `Batch`. Its `RawTransactions` are invisible on an approval screen, and
-  a user cannot consent to what they were never shown. `signTransactionBulk` is
-  a different thing — N independent transactions, each rendered on its own page
-  — and the two must stay distinct in the code, the types, and the docs.
+- Anything that lets an XLS-56 `Batch` reach a signature without every inner
+  transaction having been rendered and policed. `Batch` is supported (the
+  `batch` capability) on exactly that condition: the wallet renders each inner
+  transaction on its own card and holds it to the same rules as a top-level
+  transaction, recursively — so `SetRegularKey` and the rest are refused inside
+  a batch as they are outside one, whoever's inner transaction it is. A
+  co-signed batch is signed as given (`autofill: false`) after its
+  `BatchSigners` are verified, and its result reports the inner transactions'
+  outcome, never the outer result alone. Do not add a helper that builds,
+  fills or re-signs a batch's fields on the dapp's behalf in this package, and
+  keep `signTransactionBulk` — N independent transactions, no atomicity —
+  distinct from `Batch` in the code, the types, and the docs.
 - A runtime dependency, unless there is no alternative. This package sits on the
   path between a dapp and a user's keys.
