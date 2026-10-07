@@ -22,6 +22,8 @@ export interface RecordedCall {
 
 export interface MockProviderOptions {
   version?: string
+  /** What the provider advertises in `capabilities`; omitted means no field at all. */
+  capabilities?: readonly string[]
   /**
    * Mount the typed methods the real provider exposes. Off simulates an older
    * or newer provider that only offers `request()`.
@@ -63,6 +65,7 @@ export function createMockProvider(options: MockProviderOptions = {}): MockProvi
     isJoey: true,
     rdns: 'xyz.joeywallet',
     version,
+    ...(options.capabilities !== undefined ? { capabilities: options.capabilities } : {}),
     calls,
 
     get accounts() {

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createJoeyClient, readAccounts, readNetwork } from '../src/client'
 import { JOEY_ERROR_CODES, JoeyRpcError } from '../src/errors'
+import { JOEY_CAPABILITIES, hasCapability } from '../src/provider'
+import { BATCH_FLAGS, TF_INNER_BATCH_TXN, type BatchTransaction } from '../src/types'
 import { createMockProvider, type MockProvider } from './harness'
 
 const ADDRESS = 'rLNaPoKeeBjZe2qs6x52yVPZpZ8td4dc6w'
@@ -420,6 +422,91 @@ describe('escape hatch', () => {
     expect(joey.provider).toBe(provider)
     expect(joey.rdns).toBe('xyz.joeywallet')
     expect(joey.version).toBe('1.0.0-test')
+  })
+})
+
+describe('capabilities', () => {
+  it('reports XLS-56 Batch support when the provider advertises it', () => {
+    const joey = createJoeyClient(createMockProvider({ capabilities: ['batch'] }))
+    expect(joey.supportsBatch()).toBe(true)
+    expect(joey.capabilities).toEqual(['batch'])
+  })
+
+  it('answers false for an extension too old to have the field', () => {
+    // The extension that predates the field refuses every Batch with 4100, so
+    // "no list" has to read as "no".
+    const joey = createJoeyClient(createMockProvider())
+    expect(joey.supportsBatch()).toBe(false)
+    expect(joey.capabilities).toEqual([])
+  })
+
+  it('answers false for a list that does not name it, and ignores junk entries', () => {
+    const joey = createJoeyClient(
+      createMockProvider({ capabilities: ['somethingElse', 42 as unknown as string] }),
+    )
+    expect(joey.supportsBatch()).toBe(false)
+    expect(joey.capabilities).toEqual(['somethingElse'])
+  })
+
+  it('publishes the wire name the extension advertises', () => {
+    // The extension's `JOEY_PROVIDER_CAPABILITIES` holds the same literal;
+    // its sdkWire contract test pins it from the other side.
+    expect(JOEY_CAPABILITIES.batch).toBe('batch')
+    expect(hasCapability(createMockProvider({ capabilities: ['batch'] }), 'batch')).toBe(true)
+  })
+})
+
+describe('an XLS-56 Batch', () => {
+  it('is passed to the provider unread, with autofill false and BatchSigners intact', async () => {
+    const { provider, joey } = wired()
+    provider.respond('signAndSubmitTransaction', () => ({
+      tx_json: {},
+      tx_blob: 'AB',
+      hash: 'CD',
+      engine_result: 'tesSUCCESS',
+      batch: { mode: 'tfAllOrNothing', applied: 'none', inner: [] },
+    }))
+    const batch: BatchTransaction = {
+      TransactionType: 'Batch',
+      Account: 'rUser',
+      Flags: BATCH_FLAGS.tfAllOrNothing,
+      Sequence: 10,
+      Fee: '40',
+      LastLedgerSequence: 100,
+      RawTransactions: [
+        {
+          RawTransaction: {
+            TransactionType: 'NFTokenCreateOffer',
+            Account: 'rUser',
+            Fee: '0',
+            SigningPubKey: '',
+            Flags: TF_INNER_BATCH_TXN,
+            Sequence: 11,
+          },
+        },
+        {
+          RawTransaction: {
+            TransactionType: 'NFTokenAcceptOffer',
+            Account: 'rBroker',
+            Fee: '0',
+            SigningPubKey: '',
+            Flags: TF_INNER_BATCH_TXN,
+            Sequence: 0,
+            TicketSequence: 5,
+          },
+        },
+      ],
+      BatchSigners: [
+        { BatchSigner: { Account: 'rBroker', SigningPubKey: 'ED00', TxnSignature: '00' } },
+      ],
+    }
+
+    const result = await joey.signAndSubmitTransaction({ tx_json: batch, autofill: false })
+
+    expect(provider.lastCall()?.params).toEqual({ tx_json: batch, autofill: false })
+    // The outer result reads as success; the batch outcome is what says it did nothing.
+    expect(result.engine_result).toBe('tesSUCCESS')
+    expect(result.batch?.applied).toBe('none')
   })
 })
 

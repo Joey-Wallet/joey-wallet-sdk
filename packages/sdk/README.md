@@ -359,13 +359,114 @@ that screen. Both are unambiguous; only the pair "transaction 2 of 5" next to
 
 > **`signTransactionBulk` is not XLS-56 `Batch`.** They are different things and
 > Joey keeps them apart deliberately. A `Batch` is a *single* transaction
-> carrying others inside `RawTransactions`, committed atomically on-ledger; Joey
-> refuses to sign one for a website, because its approval screen renders the
-> outer transaction and a user cannot consent to inner ones they were never
-> shown. `signTransactionBulk` is the opposite arrangement: ordinary, separate
-> transactions, each rendered on its own page of one approval, each signed on
-> its own — and with no atomicity at all. If transaction 3 fails, 1 and 2 have
-> still happened.
+> carrying others inside `RawTransactions`, committed atomically on-ledger, and
+> it goes through `signTransaction` / `signAndSubmitTransaction` — see
+> [XLS-56 Batch](#xls-56-batch) below. `signTransactionBulk` is the opposite
+> arrangement: ordinary, separate transactions, each signed on its own — and
+> with no atomicity at all. If transaction 3 fails, 1 and 2 have still happened.
+
+---
+
+## XLS-56 Batch
+
+A wallet that advertises the `batch` capability signs an XLS-56 `Batch` for a
+website: one outer transaction carrying two to eight inner transactions that the
+ledger applies together. The approval screen renders **every** inner
+transaction on its own card, and holds each one to the same rules as a
+top-level transaction — an account-control type is refused inside a batch
+exactly as it is outside one.
+
+Ask first. An older extension refuses every `Batch` with `4100`:
+
+```ts
+if (!joey.supportsBatch()) {
+  // fall back to separate transactions
+}
+```
+
+### A batch another account has co-signed
+
+An inner transaction may belong to another account — a marketplace's broker
+accepting the offer your user's own inner transaction creates, say — when that
+account has signed through `BatchSigners`. Joey signs the **outer** transaction
+as the user; it never produces a `BatchSigner` itself.
+
+```ts
+import { BATCH_FLAGS, TF_INNER_BATCH_TXN, type BatchTransaction } from '@joeywallet/wallet-sdk'
+
+const batch: BatchTransaction = {
+  TransactionType: 'Batch',
+  Account: user,
+  Flags: BATCH_FLAGS.tfAllOrNothing,
+  Sequence: n,                 // the user's next sequence
+  Fee: fee,                    // base fee x (2 + inner count + co-signers)
+  LastLedgerSequence: current + 15,
+  RawTransactions: [
+    { RawTransaction: { TransactionType: 'NFTokenCreateOffer', Account: user,
+        Sequence: n + 1, Fee: '0', SigningPubKey: '', Flags: TF_INNER_BATCH_TXN, /* … */ } },
+    { RawTransaction: { TransactionType: 'NFTokenAcceptOffer', Account: broker,
+        Sequence: 0, TicketSequence: ticket, Fee: '0', SigningPubKey: '', Flags: TF_INNER_BATCH_TXN, /* … */ } },
+  ],
+  BatchSigners: [{ BatchSigner: { Account: broker, SigningPubKey, TxnSignature } }],
+}
+
+const result = await joey.signAndSubmitTransaction({ tx_json: batch, autofill: false })
+```
+
+What the wallet holds you to, and why:
+
+- **`autofill: false`.** A co-signature (under the `BatchV1_1` amendment) covers
+  the outer `Account`, the outer `Sequence` (or its ticket), `Flags`, every
+  inner transaction's id and the co-signer's own account — not the outer `Fee`
+  or `LastLedgerSequence`. Filling would renumber what it covers, so a batch
+  carrying `BatchSigners` or another account's inner transaction is refused
+  with autofill on (`-32602`). Everything you send is signed exactly as given;
+  `BatchSigners` comes back byte for byte.
+- **Every co-signature must verify** over the batch as you sent it, and its key
+  must be the co-signing account's enabled master key or its regular key. A
+  stale or foreign one is refused before the user is asked (`-32602`, naming
+  the account) rather than signed into something the network will reject after
+  the fee is spent.
+- **Every other account that owns an inner transaction has a `BatchSigners`
+  entry**, and every entry belongs to such an account — not to the outer
+  account, and not twice. A multi-signed `BatchSigner` is refused: the wallet
+  cannot verify it.
+- **Inner transactions:** `Fee: "0"`, empty `SigningPubKey`, no signature,
+  `tfInnerBatchTxn`, no nested `Batch`. The user's own inner transactions take
+  the outer `Sequence` + 1, + 2, … in order and carry no `LastLedgerSequence`.
+  Another account's may use a ticket (`Sequence: 0`) and may carry a
+  `LastLedgerSequence`.
+- **Exactly one mode flag.** The approval screen states it in words.
+- **A Ledger account cannot sign a `Batch`.** The XRP app cannot display one;
+  the wallet says so before the device is asked.
+
+With `autofill` left on, a batch that involves no other account is filled only
+where you left a field out — the wallet never replaces a value you set.
+
+### Did it apply?
+
+**Not from `engine_result`.** That is the outer transaction's, and under
+`tfAllOrNothing` a batch whose inner transaction failed is still `tesSUCCESS`:
+the fee is charged, the sequence consumed, and **no inner transaction is on the
+ledger at all**. A submitted batch's result carries `batch` instead:
+
+```ts
+if (result.batch?.applied !== 'all') {
+  // 'none'    — rolled back; nothing happened but the fee
+  // 'some'    — only in the other three modes
+  // 'unknown' — look result.batch.inner[i].hash up yourself before acting
+}
+```
+
+`batch.inner[i]` is one entry per inner transaction, in order: its `hash` (the
+id it is recorded under if it applied), its `account`, and a `status` —
+`applied` (validated `tesSUCCESS`, its metadata's `ParentBatchID` the outer
+hash), `failed`, `not_applied` (the node holds the outer's ledger and it is not
+there) or `unknown`. `signTransactionBulk` entries submitted with
+`submit: true` carry the same field when the entry is a `Batch`.
+
+`signTransaction` returns the signed blob without submitting; checking the
+inner transactions after you submit it is yours to do, the same way.
 
 
 ---
@@ -709,12 +810,14 @@ a one-line import change.
 | `accounts` | granted addresses, synchronously |
 | `chain` | `JoeyChain \| null`, synchronously |
 | `isConnected()` | `boolean`, synchronously |
+| `supportsBatch()` | `boolean`, synchronously — whether the wallet signs an XLS-56 `Batch` for a site |
+| `capabilities` | `readonly string[]` — the names the provider advertises (`JOEY_CAPABILITIES`) |
 | `connect(params?)` | `{ accounts, chain, networkId }` |
 | `disconnect()` | `void` |
 | `getAccounts()` | `string[]` — `[]` for an unconnected origin, never an error |
 | `getNetwork()` | `{ chain, networkId, name }` — `name` is `'Mainnet'` / `'Testnet'` / `'Devnet'` |
 | `signTransaction({ tx_json, account?, chain?, autofill? })` | `{ tx_json, tx_blob, hash }` |
-| `signAndSubmitTransaction(…same…)` | the above plus `engine_result`, `engine_result_message` |
+| `signAndSubmitTransaction(…same…)` | the above plus `engine_result`, `engine_result_message`, and `batch` for an XLS-56 `Batch` |
 | `signTransactionFor({ tx_signer, tx_json, account?, chain?, autofill? })` | `{ tx_json, tx_blob, hash }` |
 | `signTransactionBulk({ tx_list, submit, account?, chain?, autofill? })` | `SignAndSubmitTransactionResult[]` — `engine_result` only when `submit: true` |
 | `signIn(params?)` | `{ address, publicKey, signature, message?, tx_blob? }` |
@@ -746,7 +849,8 @@ enforcement point. **A passing check against this constant is not permission to
 sign.**
 
 The wallet keeps its own rules and applies them at approval time, at every
-nesting level. At the time of writing it still refuses:
+nesting level — including each inner transaction of an XLS-56 `Batch`, whoever's
+it is. At the time of writing it still refuses:
 
 | Type | Why |
 | ---- | --- |
@@ -755,7 +859,6 @@ nesting level. At the time of writing it still refuses:
 | `DelegateSet` | The same again (XLS-75). With `Payment` in its `Permissions`, a standing licence to drain every balance. |
 | `AccountDelete` | Irreversible. |
 | `SetHook` | Installs code that runs on every future transaction. |
-| `Batch` | Carries other transactions inside `RawTransactions`, which the approval screen cannot render — see the note under bulk signing. |
 
 Plus two rules that were never expressible as a type name:
 
@@ -775,3 +878,7 @@ wording can be as blunt as it needs to be.
 
 Because the constant no longer lists them, expect these to arrive as a `4100`
 from the approval queue and handle them there.
+
+`Batch` itself is no longer on the list. A wallet that advertises the `batch`
+capability signs one, under the rules in [XLS-56 Batch](#xls-56-batch); an older
+one refuses it with `4100`.
